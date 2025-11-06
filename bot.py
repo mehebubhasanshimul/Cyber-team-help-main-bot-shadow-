@@ -1,19 +1,26 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import os
-from flask import Flask, request, abort
-import sys
-import threading  # ✅ Threading যোগ করা হয়েছে
+from flask import Flask, request, abort, send_from_directory
+import requests
+import os, sys, threading, json
 
-# --- 🔧 কনফিগারেশন ---
+# --- 🔧 CONFIGURATION ---
 API_TOKEN = os.environ.get('BOT_TOKEN')
 WEBHOOK_URL_BASE = os.environ.get('WEBHOOK_URL')  # যেমন: https://your-app-name.onrender.com
 WEBHOOK_URL_PATH = f"/{API_TOKEN}"
 
-bot = telebot.TeleBot(API_TOKEN)
+WEB_URL = "https://shadow-image-hosting-bot-1.onrender.com"
+GROUP_LINK = "https://t.me/+DLEo8TQ1PjIzYzFl"
+WELCOME_IMAGE = "https://iili.io/KOUGVeI.md.jpg"
+CREDIT = "© SHADOW JOKER"
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+bot = telebot.TeleBot(API_TOKEN, threaded=True)
 server = Flask(__name__)
 
-# --- 🧰 টুলস লিস্ট ---
+# --- 🧰 TOOLS LIST ---
 TOOLS = [
     ("১. FB Fake ID রিপোর্ট", "https://fb-fakeid-report-shadowjoker.vercel.app/"),
     ("২. FB রিকভার ডিজেবল", "https://fb-disable-account-recover-shadowjo.vercel.app/"),
@@ -34,19 +41,15 @@ TOOLS = [
     ("১৭. Root Wifi Hack", "https://shadow-root-phone-wifi-hack.vercel.app/"),
     ("১৮. CTH টুল জোন", "https://shadow-cth-tool-joker.vercel.app/"),
 ]
-
 PAGE_SIZE = 6
 
-# --- ⏩ Pagination Keyboard ---
+# --- Pagination Keyboard ---
 def generate_keyboard(page=0):
     markup = InlineKeyboardMarkup()
     start_index = page * PAGE_SIZE
     end_index = start_index + PAGE_SIZE
-    current_tools = TOOLS[start_index:end_index]
-    
-    for name, url in current_tools:
+    for name, url in TOOLS[start_index:end_index]:
         markup.add(InlineKeyboardButton(name, url=url))
-        
     nav_buttons = []
     if page > 0:
         nav_buttons.append(InlineKeyboardButton("⏪ Back", callback_data=f"page_{page-1}"))
@@ -54,79 +57,77 @@ def generate_keyboard(page=0):
         nav_buttons.append(InlineKeyboardButton("Next ⏩", callback_data=f"page_{page+1}"))
     if nav_buttons:
         markup.row(*nav_buttons)
-        
-    return markup, page
+    return markup
 
-# --- 🚀 Start Command ---
+# --- Start Command ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_name = message.from_user.first_name or "Dear"
     welcome_text = (
-        f"🤖 *Hello {user_name}*,\n\n"
-        f"✅ *Bot READY*\\! নিচে আপনার প্রয়োজনীয় সমস্ত টুলস পেয়ে যাবেন, ব্যবহার শুরু করুন\\.\n\n"
-        f"═════════════════\n"
-        f"⚔️ **CYBER TEAM HELP**\n"
-        f"👤 _CREATE BY SHADOW JOKER_"
+        f"🤖 <b>Hello {user_name}</b>\n\n"
+        f"✅ <b>Bot READY!</b>\nনিচে আপনার প্রয়োজনীয় টুলস পাবেন 👇\n\n"
+        f"🔗 ওয়েবসাইট: <a href='{WEB_URL}'>Click Here</a>\n"
+        f"👥 গ্রুপ জয়েন করতে: <a href='{GROUP_LINK}'>Click Here</a>\n\n"
+        f"<i>{CREDIT}</i>"
     )
-    keyboard, page = generate_keyboard(0)
-    bot.send_message(
-        message.chat.id,
-        welcome_text,
-        parse_mode="MarkdownV2",
-        reply_markup=keyboard
-    )
+    keyboard = generate_keyboard(0)
+    bot.send_photo(message.chat.id, WELCOME_IMAGE, caption=welcome_text, parse_mode="HTML", reply_markup=keyboard)
 
-# --- 🔁 Page Navigation ---
+# --- Page Navigation ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith('page_'))
 def callback_query(call):
     try:
         new_page = int(call.data.split('_')[1])
-    except:
-        bot.answer_callback_query(call.id, "পেজ লোড করার সমস্যা হয়েছে।")
-        return
-    keyboard, current_page = generate_keyboard(new_page)
-    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)
-    bot.answer_callback_query(call.id, f"পৃষ্ঠা: {new_page+1}")
+        keyboard = generate_keyboard(new_page)
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=keyboard)
+        bot.answer_callback_query(call.id, f"পৃষ্ঠা: {new_page+1}")
+    except Exception as e:
+        print("Callback error:", e, file=sys.stderr)
+        bot.answer_callback_query(call.id, "Error loading page.")
 
-# --- 🧠 Webhook রিসিভার ---
+# --- Image Upload Handler ---
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    photo_file_id = message.photo[-1].file_id
+    file_info = bot.get_file(photo_file_id)
+    downloaded_file = bot.download_file(file_info.file_path)
+    filename = os.path.basename(file_info.file_path)
+    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    with open(save_path, "wb") as f:
+        f.write(downloaded_file)
+    public_url = f"{WEB_URL}/{UPLOAD_FOLDER}/{filename}"
+    bot.reply_to(message, f"✅ Uploaded Successfully!\n\n📸 Hosted Link:\n{public_url}\n\n{CREDIT}")
+
+# --- Webhook Handler ---
 @server.route(WEBHOOK_URL_PATH, methods=['POST'])
 def webhook():
-    print("✅ Webhook called correctly!", file=sys.stdout)
     if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        # ✅ Thread ব্যবহার করা হয়েছে যাতে রেসপন্স বন্ধ না হয়
+        json_str = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_str)
         threading.Thread(target=bot.process_new_updates, args=([update],)).start()
-        return '!', 200
+        return 'ok', 200
     else:
         abort(403)
 
-# --- 🌐 মূল রুট (Render GET + Telegram POST fix) ---
-@server.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        print("⚙️ POST / received", file=sys.stdout)
-        if request.headers.get('content-type') == 'application/json':
-            json_string = request.get_data().decode('utf-8')
-            update = telebot.types.Update.de_json(json_string)
-            threading.Thread(target=bot.process_new_updates, args=([update],)).start()
-            return '!', 200
-        else:
-            abort(403)
-    return "✅ Cyber Team Help Bot Webhook Server is running.", 200
+# --- Serve Uploaded Files ---
+@server.route(f'/{UPLOAD_FOLDER}/<filename>')
+def serve_upload(filename):
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
-# --- 🧩 Webhook Setup Function ---
+# --- Root Route ---
+@server.route('/', methods=['GET'])
+def index():
+    return f"<h3>🤖 Cyber Team Help Bot is running... {CREDIT}</h3>"
+
+# --- Set Webhook ---
 def set_webhook():
     bot.remove_webhook()
-    full_webhook_url = WEBHOOK_URL_BASE + WEBHOOK_URL_PATH
-    success = bot.set_webhook(url=full_webhook_url)
-    if success:
-        print(f"🎯 Webhook successfully set to: {full_webhook_url}", file=sys.stdout)
-    else:
-        print("❌ Failed to set Webhook!", file=sys.stdout)
+    full_url = WEBHOOK_URL_BASE + WEBHOOK_URL_PATH
+    ok = bot.set_webhook(url=full_url)
+    print(f"🎯 Webhook Set: {full_url}" if ok else "❌ Webhook Failed", file=sys.stdout)
 
-# --- 🏁 Run Flask Server ---
+# --- Run Server ---
 if __name__ == "__main__":
     set_webhook()
-    port = int(os.environ.get('PORT', 10000))
+    port = int(os.environ.get("PORT", 5000))
     server.run(host="0.0.0.0", port=port)
