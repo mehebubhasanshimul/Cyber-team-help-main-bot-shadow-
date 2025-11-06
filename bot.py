@@ -1,8 +1,7 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request, abort, send_from_directory
-import requests
-import os, sys, threading, json
+import os, sys, threading
 
 # --- 🔧 CONFIGURATION ---
 API_TOKEN = os.environ.get('BOT_TOKEN')
@@ -24,7 +23,7 @@ server = Flask(__name__)
 TOOLS = [
     ("১. FB Fake ID রিপোর্ট", "https://fb-fakeid-report-shadowjoker.vercel.app/"),
     ("২. FB রিকভার ডিজেবল", "https://fb-disable-account-recover-shadowjo.vercel.app/"),
-    ("৩. SMS Bomber", "https://shadow-joker-hard-sms-bombar.vercel.app/"),
+    ("৩. SMS Bomber", "https://shadow-joker-hard-sms-bms.vercel.app/"),
     ("৪. ফেইক NID মেকার", "https://bangladesh-fake-nid-maker-shadow-jo.vercel.app/"),
     ("৫. IP Info Bot", "https://t.me/IP_INFO_SHADOW_BOT"),
     ("৬. আবহাওয়া তথ্য বট", "https://t.me/wether_info_shadow_bot"),
@@ -63,15 +62,20 @@ def generate_keyboard(page=0):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_name = message.from_user.first_name or "Dear"
-    welcome_text = (
-        f"🤖 <b>Hello {user_name}</b>\n\n"
-        f"✅ <b>Bot READY!</b>\nনিচে আপনার প্রয়োজনীয় টুলস পাবেন 👇\n\n"
-        f"🔗 ওয়েবসাইট: <a href='{WEB_URL}'>Click Here</a>\n"
-        f"👥 গ্রুপ জয়েন করতে: <a href='{GROUP_LINK}'>Click Here</a>\n\n"
-        f"<i>{CREDIT}</i>"
-    )
+
+    welcome_caption = f"""
+<b>🤖 Hello {user_name}</b>
+
+✅ <b>Bot READY!</b>
+নিচে আপনার প্রয়োজনীয় টুলস পাবেন 👇
+
+🔹 <a href='{WEB_URL}'>Use Website</a>
+🔹 <a href='{GROUP_LINK}'>Join Our Group</a>
+
+<i>{CREDIT}</i>
+"""
     keyboard = generate_keyboard(0)
-    bot.send_photo(message.chat.id, WELCOME_IMAGE, caption=welcome_text, parse_mode="HTML", reply_markup=keyboard)
+    bot.send_photo(message.chat.id, WELCOME_IMAGE, caption=welcome_caption, parse_mode="HTML", reply_markup=keyboard)
 
 # --- Page Navigation ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith('page_'))
@@ -110,13 +114,15 @@ def webhook():
         abort(403)
 
 # --- Serve Uploaded Files ---
-@server.route(f'/{UPLOAD_FOLDER}/<filename>')
+@server.route(f'/{UPLOAD_FOLDER}/<filename>', methods=['GET'])
 def serve_upload(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
 
-# --- Root Route ---
-@server.route('/', methods=['GET'])
+# --- Root Route (Status Check) ---
+@server.route('/', methods=['GET','POST'])
 def index():
+    if request.method == 'POST':
+        return 'ok', 200
     return f"<h3>🤖 Cyber Team Help Bot is running... {CREDIT}</h3>"
 
 # --- Set Webhook ---
