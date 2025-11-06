@@ -3,6 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 from flask import Flask, request, abort
 import sys
+import threading  # ✅ Threading যোগ করা হয়েছে
 
 # --- 🔧 কনফিগারেশন ---
 API_TOKEN = os.environ.get('BOT_TOKEN')
@@ -94,7 +95,8 @@ def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
+        # ✅ Thread ব্যবহার করা হয়েছে যাতে রেসপন্স বন্ধ না হয়
+        threading.Thread(target=bot.process_new_updates, args=([update],)).start()
         return '!', 200
     else:
         abort(403)
@@ -107,7 +109,7 @@ def index():
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
             update = telebot.types.Update.de_json(json_string)
-            bot.process_new_updates([update])
+            threading.Thread(target=bot.process_new_updates, args=([update],)).start()
             return '!', 200
         else:
             abort(403)
